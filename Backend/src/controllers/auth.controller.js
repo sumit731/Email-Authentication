@@ -195,10 +195,16 @@ export const verifyEmail = async(req, res) => {
             });
         }
 
-        if(user.verifyOtp !== otp || Date.now() > user.verifyOtpExpireAt){
+        if(user.verifyOtp === '' || user.verifyOtp !== otp){
             return res.json({
                 success: false,
-                message: "Invalid or expired OTP"
+                message: "Invalid OTP"
+            });
+        }
+        if(Date.now() > user.verifyOtpExpireAt){
+            return res.json({
+                success: false,
+                message: "OTP has expired"
             });
         }
 
@@ -217,6 +223,70 @@ export const verifyEmail = async(req, res) => {
         return res.json({
             success: false,
             message: "Internal server error"
+        });
+    }
+}
+
+export const isAuthenticated = async(req, res) => {
+    try{
+        return res.json({
+            success: true,
+            message: "User is authenticated",
+        })
+    }
+    catch(error){
+        res.json({
+            success: false,
+            message: error.message
+        })
+    }
+}
+
+export const sendResetOtp = async(req, res) => {
+    const {email} = req.body;
+
+    if(!email){
+        return res.json({
+            success: false,
+            message: "Email is required"
+        });
+    }
+
+    try{
+        const user = await User.findOne({email});
+
+        if(!user){
+            return res.json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        const otp = String(Math.floor(100000 + Math.random() * 900000)); // generate 6 digit OTP
+
+        user.resetOtp = otp;
+        user.resetOtpExpireAt = Date.now() + 15 * 60 * 1000; // OTP valid for 15 minutes
+        await user.save();
+
+        const mailOptions = {
+            from: process.env.SENDER_EMAIL,
+            to: email,
+            subject: "Password Reset OTP",
+            text: `Hello ${user.name},\n\nPlease use the following OTP to reset your password: ${otp}\n\nBest regards,\nThe Team`
+        }
+
+        await transporter.sendMail(mailOptions);
+        
+        return res.json({
+            success: true,
+            message: "Reset OTP sent to your email"
+        });
+    }
+    catch(error){
+        console.error("Error in sendResetOtp:", error);
+        return res.json({
+            success: false,
+            message: error.message || "Internal server error"
         });
     }
 }
