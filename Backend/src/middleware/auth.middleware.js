@@ -14,10 +14,10 @@ const userMiddleware = async (req, res, next) => {
         const tokenDecoded = jwt.verify(token, process.env.JWT_SECRET);
         
         if (tokenDecoded.id) {
-            req.body.userId = tokenDecoded.id;
+            req.userId = tokenDecoded.id; // Attach user ID to request body
         }
         else {
-            return res.json({
+            res.json({
                 success: false,
                 message: "Invalid token"
             });
