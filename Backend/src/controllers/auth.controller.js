@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import User from "../models/user.model.js";
 import bcrypt from "bcryptjs";
+import transporter from "../utils/transporter.js";
 
 export const register = async(req, res) => {
     const {name, email, password} = req.body;
@@ -35,6 +36,17 @@ export const register = async(req, res) => {
             sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
             maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
         })
+
+        // sending welcome email
+        const mailOptions = {
+            from: process.env.SENDER_EMAIL,
+            to: email,
+            subject: "Welcome to Our Service",
+            text: `Hello ${name},\n\nThank you for registering with us. We are excited to have you on board!\n\nBest regards,\nThe Team`
+        }
+
+        await transporter.sendMail(mailOptions);
+
         return res.json({
             success: true,
             message: "Registration successful"
@@ -122,3 +134,89 @@ export const logout = (req, res) => {
         });
     }
 };
+
+//send verification OTP to user's email
+export const sendVerifyOtp = async(req, res) => {
+    try{
+        const {userId} = req.body;
+        const user = await User.findById(userId);
+
+        if(user.isAccountVerified){
+            return res.json({
+                success: false,
+                message: "Account already verified"
+            });
+        }
+
+        const otp = String(Math.floor(100000 + Math.random() * 900000)); // generate 6 digit OTP
+
+        user.verifyOtp = otp;
+        user.verifyOtpExpireAt = Date.now() + 24 * 60 * 60 * 1000; // OTP valid for 24 hours
+        await user.save();
+
+        const mailOptions = {
+            from: process.env.SENDER_EMAIL,
+            to: user.email,
+            subject: "Account Verification",
+            text: `Hello ${user.name},\n\nPlease use the following OTP to verify your account: ${otp}\n\nBest regards,\nThe Team`
+        }
+
+        await transporter.sendMail(mailOptions);
+        return res.json({
+            success: true,
+            message: "Verification OTP sent to your email"
+        });
+    }
+    catch(error){
+        return res.json({
+            success: false,
+            message: "Internal server error"
+        });
+    }
+}
+
+export const verifyEmail = async(req, res) => {
+    const {userId, otp} = req.body;
+
+    if(!userId || !otp){
+        return res.json({
+            success: false,
+            message: "User ID and OTP are required"
+        });
+    }
+
+    try{
+        const user = await User.findById(userId);
+
+        if(!user || user.isAccountVerified){
+            return res.json({
+                success: false,
+                message: "Invalid request"
+            });
+        }
+
+        if(user.verifyOtp !== otp || Date.now() > user.verifyOtpExpireAt){
+            return res.json({
+                success: false,
+                message: "Invalid or expired OTP"
+            });
+        }
+
+        user.isAccountVerified = true;
+        user.verifyOtp = '';
+        user.verifyOtpExpireAt = 0;
+        await user.save();
+
+        return res.json({
+            success: true,
+            message: "Account verified successfully"
+        });
+    }
+    catch(error){
+        console.error("Error in verifyEmail:", error);
+        return res.json({
+            success: false,
+            message: "Internal server error"
+        });
+    }
+}
